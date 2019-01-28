@@ -1,0 +1,41 @@
+#!/bin/bash -e
+
+echo -n "=== Determining project directory: "
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. >/dev/null 2>&1 && pwd )"
+DATA_DIR="$PROJECT_DIR/data"
+TEMPLATE_DIR="$PROJECT_DIR/templates"
+echo "$PROJECT_DIR"
+
+echo "=== Setting up Avahi service"
+sudo cp $TEMPLATE_DIR/ssh.service /etc/avahi/services/ssh.service
+
+echo "=== Creating directories"
+mkdir -p "$DATA_DIR/grafana/logs"
+mkdir -p "$DATA_DIR/influxdb"
+mkdir -p "$DATA_DIR/mosquitto"
+mkdir -p "$DATA_DIR/node-red"
+
+echo "=== Pulling docker containers"
+docker-compose pull
+
+echo "=== Setting up InfluxDB database [NOTE: Ctrl-c when it sits at 'Sending usage statistics']"
+docker run --rm influxdb influxd config > $DATA_DIR/influxdb/influxdb.conf
+docker run --rm \
+  -u 1000:1000 \
+  -v $DATA_DIR/influxdb/influxdb.conf:/etc/influxdb/influxdb.conf \
+  -v $DATA_DIR/influxdb:/var/lib/influxdb \
+  -e INFLUXDB_DB=iot \
+  influxdb -config /etc/influxdb/influxdb.conf /init-influxdb.sh
+
+echo "=== Touching files to avoid errors"
+touch $DATA_DIR/grafana/grafana.ini
+
+echo "=== Setup docker-compose to run on boot"
+sudo systemctl disable docker-compose-logger
+sudo cp $TEMPLATE_DIR/docker-compose-logger.service /etc/systemd/system/
+sudo sed -i \
+  "s@{{WORKING_DIRECTORY}}@${PROJECT_DIR}@g" \
+  /etc/systemd/system/docker-compose-logger.service
+sudo systemctl enable docker-compose-logger
+
+echo "=== Done!"

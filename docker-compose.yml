@@ -1,0 +1,93 @@
+version: '2.2'
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: moquitto
+    user: "1000:1000"
+    ports:
+      - "9001:9001"
+      - "1883:1883"
+    volumes:
+      - ./data/mosquitto:/mosquitto/config:ro
+      - ./data/mosquitto:/mosquitto/data
+    restart: always
+
+  node-red:
+    image: nodered/node-red-docker:rpi
+    container_name: nodered
+    user: "1000:1000"
+    ports:
+      - "1880:1880"
+    volumes:
+      - ./data/node-red:/data:rw
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    restart: "no" # because the exit code(s) are wrong
+    links:
+      - mosquitto:mqtt
+      - influxdb
+    depends_on:
+      mosquitto:
+        condition: service_started
+      influxdb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:1880"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  influxdb:
+    image: influxdb
+    container_name: influxdb
+    user: "1000:1000"
+    restart: always
+    environment:
+      - INFLUXDB_USER=admin
+      - INFLUXDB_PASS=admin
+      - INFLUXDB_NAME=iot
+      - PRE_CREATE_DB=iot
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./data/influxdb/influxdb.conf:/etc/influxdb/influxdb.conf:ro
+      - ./data/influxdb:/var/lib/influxdb
+      - ./data/influxdb/data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sI", "http://127.0.0.1:8086/ping"]
+      interval: 30s
+      timeout: 1s
+      retries: 24
+
+  # Define a service for using the influx CLI tool.
+  # docker-compose run influxdb-cli
+  influxdb-cli:
+    image: influxdb
+    restart: "no"
+    entrypoint: ["influx", "-host", "influxdb", "-precision", "rfc3339"]
+    links:
+      - influxdb
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    user: "1000:1000"
+    environment:
+      - INFLUXDB_USER=admin
+      - INFLUXDB_PASS=admin
+      - INFLUXDB_NAME=iot
+      - NO_PROXY=influxdb
+    ports:
+      - 3000:3000
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./data/grafana:/etc/grafana
+      - ./data/grafana/logs:/var/log/grafana
+      - /etc/timezone:/etc/timezone:ro
+    restart: on-failure
+    links:
+      - influxdb
+    depends_on:
+      influxdb:
+        condition: service_healthy
