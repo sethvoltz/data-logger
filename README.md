@@ -1,5 +1,7 @@
 # Home Logger with Raspberry Pi and ESP8266
 
+![hardware photos](https://raw.githubusercontent.com/sethvoltz/data-logger/master/media/header.jpg)
+
 A (hopefully) simple to setup and replicate home sensor logger setup using ESP8266 nodes which log
 sensor readings to a central aggregator over MQTT. Aggregator lives on a Raspberry Pi and uses
 Node RED, InfluxDB, and Grafana to route, store and visualize the data.
