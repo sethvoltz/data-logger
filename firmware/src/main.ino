@@ -13,6 +13,7 @@
 #include <WiFiManager.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <stdio.h>
 
 
 // =----------------------------------------------------------------------------= Configuration =--=
@@ -68,6 +69,7 @@
 
 void displayLoop(bool);
 void runProgramDefault(bool);
+void runProgramNotify(bool);
 
 
 // =----------------------------------------------------------------------------------= Globals =--=
@@ -77,13 +79,15 @@ void runProgramDefault(bool);
 // The first program will be the default.
 int currentProgram = 0;
 void (*renderFunc[])(bool) {
-  runProgramDefault
+  runProgramDefault,
+  runProgramNotify
 };
 #define PROGRAM_COUNT (sizeof(renderFunc) / sizeof(renderFunc[0]))
 
 // Define the string name mappings for each program here for MQTT translation.
 const char *programNames[] = {
-  "default"
+  "default",
+  "notify"
 };
 
 // WiFi Client
@@ -105,6 +109,8 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GR
 
 // Display
 float globalIntensity = DEFAULT_INTENSITY;
+uint32_t notifyColor;
+uint32_t notifyDelay;
 
 // Buttons
 int buttonValue = 0;     // Value read from button
@@ -204,6 +210,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   if (topicMatch(topic, "identify")) {
     sendIdentity();
+  } else if (topicMatch(topic, "notify")) {
+    setNotify(message);
+  } else if (topicMatch(topic, "brightness")) {
+    setBrightness(message);
   }
 }
 
@@ -235,7 +245,10 @@ void mqttConnect() {
 
         // Subscribe to topics
         mqttClient.subscribe(makeTopic("identify", true).c_str());
-        // mqttClient.subscribe(makeTopic("program").c_str());
+        mqttClient.subscribe(makeTopic("brightness", true).c_str());
+        mqttClient.subscribe(makeTopic("brightness").c_str());
+        mqttClient.subscribe(makeTopic("notify", true).c_str());
+        mqttClient.subscribe(makeTopic("notify").c_str());
 
         // Reset number of attempts and enable the display
         connectionAttempts = 0;
@@ -320,6 +333,15 @@ void setProgram(String programName) {
   }
 }
 
+void setNotify(String color) {
+  int hue, saturation, value, delay;
+  if (sscanf(color.c_str(), "%d,%d,%d,%d", &hue, &saturation, &value, &delay) == 4) {
+    notifyColor = hsi2rgbw(hue, saturation / 100.0, globalIntensity * value / 100.0);
+    notifyDelay = delay * 1000;
+    setProgram("notify");
+  }
+}
+
 void nextProgram() {
   setProgram((currentProgram + 1) % PROGRAM_COUNT); // Next with loop around
 }
@@ -350,6 +372,29 @@ void runProgramDefault(bool first) {
     float degPerFrame = 360 / DISPLAY_FPS / 6; // 6 seconds
     angleOffset = floatmod(angleOffset + degPerFrame, 360);
     updateTimer = millis();
+  }
+}
+
+// Program: Notify
+// Show a particular color on the display for a set period of time
+void runProgramNotify(bool first) {
+  static unsigned long updateTimer = millis();
+  static unsigned long timeoutTimer = millis();
+
+  if (first) {
+    timeoutTimer = millis(); // Reset timout
+  }
+
+  unsigned long updateTimeDiff = millis() - updateTimer;
+  if (first || updateTimeDiff > FRAME_DELAY_MS) {
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, notifyColor); }
+    strip.show();
+    updateTimer = millis();
+  }
+
+  unsigned long timeoutTimeDiff = millis() - timeoutTimer;
+  if (timeoutTimeDiff > notifyDelay) {
+    setProgram("default");
   }
 }
 
