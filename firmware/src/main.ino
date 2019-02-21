@@ -2,6 +2,9 @@
 
 #include <FS.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_MCP9808.h>
@@ -18,6 +21,11 @@
 #define SETUP_AP_NAME                 "Setup Data Collector"
 #define SETUP_AP_PASSWORD             "setupcollector"
 #define WIFI_RECONNECT_TIMER          60000 // Delay for rechecking wifi if disconnected
+
+// OTA Updates
+#define OTA_PORT                      8266
+#define OTA_HOSTNAME_PREFIX           "data-collector"
+#define OTA_PASSWORD                  "data-collector" // consider changing to MD5 hash
 
 // MQTT
 #define MAX_CONNECTION_ATTEMPTS       3 // Number of attempts before enabling display
@@ -647,6 +655,58 @@ void setupFileSystem() {
 }
 
 
+// =------------------------------------------------------------------------------= OTA Updates =--=
+
+void setupOta() {
+  // ArduinoOTA.setPort(OTA_PORT); // re-add when platformio fixes bug
+  ArduinoOTA.setHostname((const char *)(String(OTA_HOSTNAME_PREFIX) + "-" + clientId).c_str());
+  // ArduinoOTA.setPassword(OTA_PASSWORD); // re-add when platformio fixes bug
+  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_SPIFFS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+    strip.setPixelColor(0, hsi2rgbw(240, 1, globalIntensity));
+    strip.setPixelColor(1, hsi2rgbw(120, 1, globalIntensity));
+    strip.show();
+    Serial.println("Start updating " + type);
+    delay(100);
+    Serial.end();
+  });
+
+  ArduinoOTA.onEnd([]() {
+    Serial.begin(115200);
+    Serial.println("\nOTA Completed.");
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+
+  ArduinoOTA.begin();
+}
+
+void otaLoop() {
+  ArduinoOTA.handle();
+}
+
 // =---------------------------------------------------------------------------= Setup and Loop =--=
 
 void setup() {
@@ -666,6 +726,7 @@ void setup() {
   setupWifi();
 
   if (wifiFeaturesEnabled) {
+    setupOta();
     setupMQTT();
   }
 }
@@ -679,6 +740,7 @@ void loop() {
 
   if (wifiFeaturesEnabled) {
     if (mqttClient.connected()) {
+      otaLoop();
       mqttClient.loop();
     } else {
       mqttConnect();
