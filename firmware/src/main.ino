@@ -53,6 +53,7 @@
 #define LIGHT_RAW_RANGE               1024 / 1.1 // adjusted for voltage divider, input 1.1v
 #define LIGHT_LOG_RANGE               5.0 // 3.3v = 10^5 lux
 #define MCP9808_ADDRESS               0x18 // default address
+#define TEMPERATURE_READ_COUNT        4 // number of temperature readings to average
 
 
 // =-------------------------------------------------------------------------------= Prototypes =--=
@@ -397,7 +398,7 @@ void setupSensors() {
   //  2    0.125°C     130 ms
   //  3    0.0625°C    250 ms
   mcp9808.begin(MCP9808_ADDRESS);
-  mcp9808.setResolution(2);
+  mcp9808.setResolution(3);
   am2320.begin();
 }
 
@@ -426,9 +427,15 @@ void sensorLoop() {
 
 float readTemperatureSensor() {
   mcp9808.wake();
-  float f = mcp9808.readTempF();
-  // mcp9808.shutdown_wake(1); // shutdown MSP9808 - power ~0.1 µAm, stops sampling
-  return f;
+
+  float temperature = 0;
+  for(size_t i = 0; i < TEMPERATURE_READ_COUNT; i++) {
+    temperature += mcp9808.readTempF();
+  }
+  temperature /= TEMPERATURE_READ_COUNT;
+
+  // mcp9808.shutdown(); // drop power consumption to ~0.1 µAm, stops sampling
+  return temperature;
 }
 
 float readHumiditySensor() {
