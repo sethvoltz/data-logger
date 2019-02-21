@@ -339,7 +339,7 @@ void runProgramDefault(bool first) {
     for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
 
-    float degPerFrame = 360 / DISPLAY_FPS / 10; // 10 seconds
+    float degPerFrame = 360 / DISPLAY_FPS / 6; // 6 seconds
     angleOffset = floatmod(angleOffset + degPerFrame, 360);
     updateTimer = millis();
   }
@@ -578,9 +578,9 @@ void wifiCaptivePortal() {
   // Maybe save the custom parameters to FS
   if (shouldSaveConfig) {
     // Read updated parameters
-    strcpy(mqtt_server, config_mqtt_server.getValue());
-    strcpy(mqtt_port, config_mqtt_port.getValue());
-    strcpy(location, config_location.getValue());
+    strlcpy(mqtt_server, config_mqtt_server.getValue(), MQTT_SERVER_LENGTH);
+    strlcpy(mqtt_port, config_mqtt_port.getValue(), MQTT_PORT_LENGTH);
+    strlcpy(location, config_location.getValue(), LOCATION_LENGTH);
 
     Serial.println("Saving config...");
     DynamicJsonBuffer jsonBuffer;
