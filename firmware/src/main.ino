@@ -109,7 +109,8 @@ Adafruit_NeoPixel strip = Adafruit_NeoPixel(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GR
 
 // Display
 float globalIntensity = DEFAULT_INTENSITY;
-uint32_t notifyColor;
+String notifyColor;
+String notifyType;
 uint32_t notifyDelay;
 
 // Buttons
@@ -192,6 +193,45 @@ uint32_t hsi2rgbw(float H, float S, float I) {
   return strip.Color(r, g, b, w);
 }
 
+// Convert RGB Hex strings to RGBW Neopixel colors
+// hex = "#rrggbb"
+uint32_t rgb2rgbw(String hex) {
+  long number = (long) strtol( &hex[1], NULL, 16);
+  int r = number >> 16;
+  int g = number >> 8 & 0xFF;
+  int b = number & 0xFF;
+
+  return rgb2rgbw(r, g, b);
+}
+
+// Convert RGB colors to RGBW Neopixel colors
+uint32_t rgb2rgbw(int R, int G, int B) {
+  // Get the maximum between R, G, and B
+  float colorMax = max(R, max(G, B));
+
+  // If the maximum value is 0, immediately return pure black.
+  if(colorMax == 0) return strip.Color(0, 0, 0, 0);
+
+  // Figure out what the color with 100% hue is
+  float multiplier = 255.0 / colorMax;
+  float hR = R * multiplier;
+  float hG = G * multiplier;
+  float hB = B * multiplier;
+
+  // This calculates the Whiteness (not strictly speaking Luminance) of the color
+  float M = max(hR, max(hG, hB));
+  float m = min(hR, min(hG, hB));
+  float Luminance = ((M + m) / 2.0 - 127.5) * (255.0 / 127.5) / multiplier;
+
+  // Calculate the output values and trim to 0 - 255
+  int r = constrain(round((R - Luminance) * globalIntensity), 0, 255);
+  int g = constrain(round((G - Luminance) * globalIntensity), 0, 255);
+  int b = constrain(round((B - Luminance) * globalIntensity), 0, 255);
+  int w = constrain(round(Luminance * globalIntensity), 0, 255);
+
+  return strip.Color(r, g, b, w);
+}
+
 
 // =-------------------------------------------------------------------------------------= MQTT =--=
 
@@ -234,7 +274,9 @@ void mqttConnect() {
   if (!mqttClient.connected()) {
     // While not connected, try every few seconds
     bool hasExceededMaxAttempts = connectionAttempts > MAX_CONNECTION_ATTEMPTS;
-    int connectionDelay = hasExceededMaxAttempts ? LONG_CONNECTION_DELAY : SHORT_CONNECTION_DELAY;
+    unsigned long connectionDelay = hasExceededMaxAttempts ?
+      LONG_CONNECTION_DELAY :
+      SHORT_CONNECTION_DELAY;
     if (connectTimeDiff > connectionDelay) {
       Serial.print("Attempting MQTT connection... ");
 
@@ -255,7 +297,7 @@ void mqttConnect() {
         enableDisplay();
       } else {
         Serial.printf(
-          "failed to connect to MQTT server: rc=%d, trying again in %d seconds\n",
+          "failed to connect to MQTT server: rc=%d, trying again in %lu seconds\n",
           mqttClient.state(),
           connectionDelay / 1000
         );
@@ -333,13 +375,42 @@ void setProgram(String programName) {
   }
 }
 
-void setNotify(String color) {
-  int hue, saturation, value, delay;
-  if (sscanf(color.c_str(), "%d,%d,%d,%d", &hue, &saturation, &value, &delay) == 4) {
-    notifyColor = hsi2rgbw(hue, saturation / 100.0, globalIntensity * value / 100.0);
-    notifyDelay = delay * 1000;
-    setProgram("notify");
+/*
+  command: JSON string with object defining the notification
+  structure:
+    {
+      type: "normal|pulse|flash|reset", # type of alert, 'reset' ignores all other keys
+      color: "rrggbb",                  # hex color string
+      duration: n,                      # duration in seconds, -1 for infinite, omit for default
+    }
+*/
+void setNotify(String command) {
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& json = jsonBuffer.parseObject(command);
+
+  if (!json.containsKey("type")) return;
+  if (json.get<String>("type").equals("reset")) {
+    setProgram("default");
+    return;
   }
+  notifyType = json.get<String>("type");
+
+  if (!json.containsKey("color")) return;
+  if (json.get<String>("color").length() != 7) return;
+  notifyColor = json.get<String>("color");
+
+  if (json.containsKey("duration")) {
+    if (json["duration"] < 0) {
+      notifyDelay = 0;
+    } else {
+      notifyDelay = json.get<int>("duration") * 1000;
+    }
+  } else {
+    notifyDelay = 10000; // default delay
+  }
+
+  setProgram("notify");
+  displayLoop(true); // ensure reset for new timeout
 }
 
 void nextProgram() {
@@ -387,13 +458,14 @@ void runProgramNotify(bool first) {
 
   unsigned long updateTimeDiff = millis() - updateTimer;
   if (first || updateTimeDiff > FRAME_DELAY_MS) {
-    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, notifyColor); }
+    uint32_t color = rgb2rgbw(notifyColor);
+    for (int i = 0; i < NEOPIXEL_COUNT; ++i) { strip.setPixelColor(i, color); }
     strip.show();
     updateTimer = millis();
   }
 
   unsigned long timeoutTimeDiff = millis() - timeoutTimer;
-  if (timeoutTimeDiff > notifyDelay) {
+  if (notifyDelay > 0 && timeoutTimeDiff > notifyDelay) {
     setProgram("default");
   }
 }
