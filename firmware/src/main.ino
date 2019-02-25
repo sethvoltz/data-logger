@@ -62,7 +62,7 @@
 #define LIGHT_RAW_RANGE               1024 / 1.1 // adjusted for voltage divider, input 1.1v
 #define LIGHT_LOG_RANGE               5.0 // 3.3v = 10^5 lux
 #define MCP9808_ADDRESS               0x18 // default address
-#define TEMPERATURE_READ_COUNT        4 // number of temperature readings to average
+#define SENSOR_READ_COUNT             4 // number of temperature readings to average
 
 
 // =-------------------------------------------------------------------------------= Prototypes =--=
@@ -554,23 +554,35 @@ float readTemperatureSensor() {
   mcp9808.wake();
 
   float temperature = 0;
-  for(size_t i = 0; i < TEMPERATURE_READ_COUNT; i++) {
+  for(size_t i = 0; i < SENSOR_READ_COUNT; i++) {
     temperature += mcp9808.readTempF();
   }
-  temperature /= TEMPERATURE_READ_COUNT;
+  temperature /= SENSOR_READ_COUNT;
 
   // mcp9808.shutdown(); // drop power consumption to ~0.1 µAm, stops sampling
   return temperature;
 }
 
 float readHumiditySensor() {
-  float humidity = am2320.readHumidity();
+  float humidity = 0;
+
+  for(size_t i = 0; i < SENSOR_READ_COUNT; i++) {
+    humidity += am2320.readHumidity();
+  }
+  humidity /= SENSOR_READ_COUNT;
+
   return humidity;
 }
 
 float readLuxSensor() {
-  int rawValue = analogRead(LIGHT_READ_PIN);
-  return rawToLux(rawValue);
+  float lux = 0;
+
+  for(size_t i = 0; i < SENSOR_READ_COUNT; i++) {
+    lux += rawToLux(analogRead(LIGHT_READ_PIN));
+  }
+  lux /= SENSOR_READ_COUNT;
+
+  return lux;
 }
 
 float rawToLux(int raw) {
