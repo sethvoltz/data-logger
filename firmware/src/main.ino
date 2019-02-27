@@ -577,10 +577,13 @@ float readHumiditySensor() {
 float readLuxSensor() {
   float lux = 0;
 
+  disableDisplay();
   for(size_t i = 0; i < SENSOR_READ_COUNT; i++) {
     lux += rawToLux(analogRead(LIGHT_READ_PIN));
+    delay(1); // recommended for more stable analog readings
   }
   lux /= SENSOR_READ_COUNT;
+  enableDisplay();
 
   return lux;
 }
