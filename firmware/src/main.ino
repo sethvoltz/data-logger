@@ -559,7 +559,7 @@ float readTemperatureSensor() {
   }
   temperature /= SENSOR_READ_COUNT;
 
-  // mcp9808.shutdown(); // drop power consumption to ~0.1 µAm, stops sampling
+  mcp9808.shutdown(); // drop power consumption to ~0.1 µAm, stops sampling
   return temperature;
 }
 
