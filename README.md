@@ -25,10 +25,16 @@ On your computer, install balenaEtcher (e.g. `brew cask install balenaetcher`) t
 On the Raspberry Pi, run the rapid setup:
 
 ```bash
-sudo raspi-config # expand volume, set hostname to `logger`, set locale, and run the update
+sudo raspi-config
+# Expand volume, set hostname to `logger`, set locale
+# Go to "Interfacing Options" > "Serial" - Disable login shell over serial, enable serial port HW
+# Lastly, run the update
 sudo apt-get update && sudo apt-get upgrade && sudo apt-get autoremove
-sudo apt-get install -y avahi-daemon vim python python-pip git libssl-dev libffi-dev
+sudo apt-get install -y avahi-daemon vim python python-pip git
 echo gpu_mem=16 | sudo tee -a /boot/config.txt
+echo hdmi_force_hotplug=1 | sudo tee -a /boot/config.txt
+echo hdmi_drive=2 | sudo tee -a /boot/config.txt
+echo 'MODE="0666", SUBSYSTEM=="tty", ATTRS{idVendor}=="0658", ATTRS{idProduct}=="0200", SYMLINK+="zwave"' | sudo tee -a /etc/udev/rules.d/99-usb-serial.rules
 sudo reboot
 ```
 
@@ -63,12 +69,14 @@ curl -sSL https://get.docker.com | sh
 sudo usermod -aG docker pi
 sudo systemctl enable docker
 sudo systemctl start docker
-sudo pip install docker-compose
+sudo apt-get install docker-compose
 ```
 
 #### Setup Services
 
-From your local machine
+First, be sure the Z-wave controller USB device is plugged in before proceeding.
+
+From your local machine:
 
 ```bash
 git clone git@github.com:sethvoltz/data-logger.git logger
@@ -76,7 +84,7 @@ cd logger
 ./bin/sync
 ```
 
-From the Raspberry Pi
+From the Raspberry Pi:
 
 ```bash
 cd ~/logger
@@ -90,6 +98,14 @@ sudo reboot
 
 * [Z-Wave Docs](https://www.home-assistant.io/docs/z-wave/installation/)
 * [Z-Wave Installation](https://blog.mornati.net/install-zwave-home-assistant/)
+* [Alias Serial Devices](http://hintshop.ludvig.co.nz/show/persistent-names-usb-serial-devices/)
+
+Software First Setup:
+
+* Follow the onboarding steps according to the on-screen prompts
+* When the page asking to set up additional services, clic the `(...)` more button
+* In the modal, search for `zwave` and select the option
+* In the new modal, enter `/dev/ttyACM0` in the "USB Path" entry
 
 #### Node RED
 

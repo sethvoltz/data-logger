@@ -10,6 +10,7 @@ echo "=== Setting up Avahi service"
 sudo cp $TEMPLATE_DIR/ssh.service /etc/avahi/services/ssh.service
 
 echo "=== Creating directories"
+mkdir -p "$DATA_DIR/home-assistant"
 mkdir -p "$DATA_DIR/grafana/logs"
 mkdir -p "$DATA_DIR/influxdb"
 mkdir -p "$DATA_DIR/mosquitto"
@@ -17,6 +18,30 @@ mkdir -p "$DATA_DIR/node-red"
 
 echo "=== Pulling docker containers"
 docker-compose pull
+echo
+
+echo "=== Building docker containers [Note: Go get a cup of coffee...]"
+docker-compose build
+echo
+
+echo "=== Set up Mosquitto users"
+if [[ -f "$DATA_DIR/mosquitto/pwfile" ]]; then
+  echo -n "Overwrite existing passwords? [y/n] "
+  read answer
+  if [[ $answer =~ ^[Yy]$ ]]; then overwrite_passwd=yes; fi
+else
+  overwrite_passwd=yes
+fi
+
+if [[ $overwrite_passwd == "yes" ]]; then
+  echo "Username: hass"
+  docker run --rm -it \
+    -u 1000:1000 \
+    -v $DATA_DIR/mosquitto:/mosquitto/config:rw \
+    eclipse-mosquitto \
+    mosquitto_passwd -c /mosquitto/config/pwfile hass
+fi
+echo
 
 echo "=== Setting up InfluxDB database [NOTE: Ctrl-c when it sits at 'Sending usage statistics']"
 docker run --rm influxdb influxd config > $DATA_DIR/influxdb/influxdb.conf
@@ -26,16 +51,20 @@ docker run --rm \
   -v $DATA_DIR/influxdb:/var/lib/influxdb \
   -e INFLUXDB_DB=iot \
   influxdb -config /etc/influxdb/influxdb.conf /init-influxdb.sh
+echo
 
 echo "=== Touching files to avoid errors"
 touch $DATA_DIR/grafana/grafana.ini
 
 echo "=== Setup docker-compose to run on boot"
-sudo systemctl disable docker-compose-logger
+if [[ -f "/etc/systemd/system/docker-compose-logger.service" ]]; then
+  sudo systemctl disable docker-compose-logger
+fi
 sudo cp $TEMPLATE_DIR/docker-compose-logger.service /etc/systemd/system/
 sudo sed -i \
   "s@{{WORKING_DIRECTORY}}@${PROJECT_DIR}@g" \
   /etc/systemd/system/docker-compose-logger.service
 sudo systemctl enable docker-compose-logger
+echo
 
 echo "=== Done!"
