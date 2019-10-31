@@ -1,26 +1,26 @@
 version: '2.2'
 
 services:
-  home-assistant:
-    image: homeassistant/raspberrypi3-homeassistant:stable
-    container_name: home-assistant
-    user: "1000:1000"
-    volumes:
-      - ./data/home-assistant:/config
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    devices:
-      - /dev/zwave:/dev/zwave
-      # - /dev/ttyACM0:/dev/ttyACM0
-    restart: always
-    # ports:
-    #   - "8123:8123"
-    network_mode: host
-    depends_on:
-      mosquitto:
-        condition: service_started
-      node-red:
-        condition: service_started
+  # home-assistant:
+  #   image: homeassistant/raspberrypi3-homeassistant:stable
+  #   container_name: home-assistant
+  #   user: "1000:1000"
+  #   volumes:
+  #     - ./data/home-assistant:/config
+  #     - /etc/localtime:/etc/localtime:ro
+  #     - /etc/timezone:/etc/timezone:ro
+  #   devices:
+  #     - /dev/zwave:/dev/zwave
+  #     # - /dev/ttyACM0:/dev/ttyACM0
+  #   restart: always
+  #   # ports:
+  #   #   - "8123:8123"
+  #   network_mode: host
+  #   depends_on:
+  #     mosquitto:
+  #       condition: service_started
+  #     node-red:
+  #       condition: service_started
 
   mosquitto:
     image: eclipse-mosquitto

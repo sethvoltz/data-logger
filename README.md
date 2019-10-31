@@ -22,28 +22,46 @@ as well. All instructions on the Raspberry Pi are universal._
 
 On your computer, install balenaEtcher (e.g. `brew cask install balenaetcher`) then write image to SD card. Re-mount image and `touch /Volumes/boot/ssh` to enable SSH on first-boot. First boot may take a few miniutes. When it's up, SSH in with `ssh pi@raspberrypi.local`.
 
-On the Raspberry Pi, run the rapid setup:
+Run the device-level setup, going through the menus as follows.
 
 ```bash
 sudo raspi-config
-# Expand volume, set hostname to `logger`, set locale
-# Go to "Interfacing Options" > "Serial" - Disable login shell over serial, enable serial port HW
-# Lastly, run the update
+#   >> Network Options > Hostname --> Set to `logger`
+#   >> Localisation Options > Change Locale --> set locale to en_us.UTF-8
+#   >> Interfacing Options > Serial --> Login shell over serial: NO, Serial port hardware: YES
+#   >> Update --> Run the update
+```
+
+Install various pre-requisites for use later, as well as configuring the Raspberry Pi for easier maintenance in the future.
+
+```bash
 sudo apt-get update && sudo apt-get upgrade && sudo apt-get autoremove
-sudo apt-get install -y avahi-daemon vim python python-pip git
+sudo apt-get install -y avahi-daemon vim python python-pip git apparmor-utils apt-transport-https \
+  avahi-daemon ca-certificates curl dbus jq network-manager socat
+sudo systemctl disable ModemManager
+sudo apt-get purge -y modemmanager
 echo gpu_mem=16 | sudo tee -a /boot/config.txt
 echo hdmi_force_hotplug=1 | sudo tee -a /boot/config.txt
 echo hdmi_drive=2 | sudo tee -a /boot/config.txt
+```
+
+> **Note:** _This is no longer needed -_ For Z-Wave usage, ensure the zwave USB stick is aliased for later use.
+
+```bash
 echo 'MODE="0666", SUBSYSTEM=="tty", ATTRS{idVendor}=="0658", ATTRS{idProduct}=="0200", SYMLINK+="zwave"' | sudo tee -a /etc/udev/rules.d/99-usb-serial.rules
+```
+
+Lastly, reboot the system so all the changes can take effect.
+
+```bash
 sudo reboot
 ```
 
 #### Setup USB external drive, reformat and configure to boot from drive
 
-[Boot from USB Drive](https://www.tomshardware.com/news/boot-raspberry-pi-from-usb,39782.html),
-[Use `gparted` for partitioning](https://pimylifeup.com/partition-and-format-drives-on-linux/).
+Connect the external hard drive and run the following commands in order to reformat the drive, build a new partition suitable for use, copy over all existing data, and configure the boot partition to use the new drive after bootstrapping to run the OS.
 
-Connect the external hard drive:
+> **WARNING:** This will _completely erase_ the hard drive and replace it's contents with the data currently on the Raspberry Pi SD card. This is a permanent action!
 
 ```bash
 sudo fdisk -l # ensure /dev/sda is the external drive
@@ -53,12 +71,16 @@ sudo mkfs.ext4 /dev/sda1
 sudo mkdir /media/usbdrive
 sudo mount /dev/sda1 /media/usbdrive
 sudo rsync -avx / /media/usbdrive
-sudo nano /boot/cmdline.txt # append the following line to the end of first line
-# root=/dev/sda1 rootfstype=ext4 rootwait
+sudo sed -i '1!b;s/$/ root=\/dev\/sda1 rootfstype=ext4 rootwait/g' /boot/cmdline.txt
 sudo reboot
 ```
 
 _Note:_ You still need the SD Card _and_ the HDD plugged in to boot. Either missing will cause it to fail to boot or kernel panic.
+
+##### Helpful Links
+
+* [Boot from USB Drive](https://www.tomshardware.com/news/boot-raspberry-pi-from-usb,39782.html)
+* [Use `gparted` for partitioning](https://pimylifeup.com/partition-and-format-drives-on-linux/)
 
 #### Setup Docker
 
@@ -72,9 +94,58 @@ sudo systemctl start docker
 sudo apt-get install docker-compose
 ```
 
-#### Setup Services
+#### Install Hass.io In Docker
 
 First, be sure the Z-wave controller USB device is plugged in before proceeding.
+
+```bash
+curl -sL "https://raw.githubusercontent.com/home-assistant/hassio-installer/master/hassio_install.sh" | sudo bash -s -- -m raspberrypi3
+```
+
+[http://logger.local:8123](http://logger.local:8123)
+
+##### Software First Setup
+
+* Follow the onboarding steps according to the on-screen prompts
+* When the page asking to set up additional services, clic the `(...)` more button
+* In the modal, search for `zwave` and select the option
+* In the new modal, enter `/dev/ttyACM0` in the "USB Path" entry
+* Click "Finish" to finalize setup and go to the home screen
+* Go to "Configuration", click "Z-Wave" and then click "Start" to start the Z-wave network
+
+To [toggle on and off][z-stick-config] the Aeotec "Disco Mode" lights on the USB stick, run the following command:
+
+```bash
+# Toggle off
+echo -e -n "\x01\x08\x00\xF2\x51\x01\x00\x05\x01\x51" > /dev/serial/by-id/usb-0658_0200-if00
+
+# Toggle on
+echo -e -n "\x01\x08\x00\xF2\x51\x01\x01\x05\x01\x50" > /dev/serial/by-id/usb-0658_0200-if00
+```
+
+Now, [pair devices][z-wave-pairing] and build your network.
+
+[z-stick-config]: https://www.home-assistant.io/docs/z-wave/device-specific/#aeotec-z-stick
+[z-wave-pairing]: https://www.home-assistant.io/docs/z-wave/adding/
+
+For backups, all HomeAssistant files are stored in `/usr/share/hassio/` with config files in `/usr/share/hassio/homeassistant`.
+
+##### Helpful Links
+
+* [Z-Wave Docs](https://www.home-assistant.io/docs/z-wave/installation/)
+* [Z-Wave Installation](https://blog.mornati.net/install-zwave-home-assistant/)
+* [Alias Serial Devices](http://hintshop.ludvig.co.nz/show/persistent-names-usb-serial-devices/)
+
+##### TODO
+
+* [HomeKit Integration](https://www.home-assistant.io/integrations/homekit/)
+* [Caddy Server](https://www.home-assistant.io/docs/ecosystem/caddy/)
+* [Github Backup](https://www.home-assistant.io/docs/ecosystem/backup/backup_github/)
+* Determine whether to use add-on versions of MQTT, Node-RED, Grafana, InfluxDB, etc.
+
+#### Auto-Setup Remaining Services
+
+**TODO:** Prefer `git` pull on Raspberry Pi to divorce direct syncing to update.
 
 From your local machine:
 
@@ -92,30 +163,16 @@ cd ~/logger
 sudo reboot
 ```
 
-#### Home Assistant
-
-[http://logger.local:8123](http://logger.local:8123)
-
-* [Z-Wave Docs](https://www.home-assistant.io/docs/z-wave/installation/)
-* [Z-Wave Installation](https://blog.mornati.net/install-zwave-home-assistant/)
-* [Alias Serial Devices](http://hintshop.ludvig.co.nz/show/persistent-names-usb-serial-devices/)
-
-Software First Setup:
-
-* Follow the onboarding steps according to the on-screen prompts
-* When the page asking to set up additional services, clic the `(...)` more button
-* In the modal, search for `zwave` and select the option
-* In the new modal, enter `/dev/ttyACM0` in the "USB Path" entry
-
-#### Node RED
+#### Configure Node RED
 
 [http://logger.local:1880](http://logger.local:1880)
 
 * Go to hamburger in upper right, click menu and choose "Manage Palette"
-* Go to the search tab, search for InfluxDB and install `node-red-contrib-influxdb`
-* Also search and install `node-red-node-darksky`
+* Go to the search tab, search and install:
+  * InfluxDB, `node-red-contrib-influxdb`
+  * DarkSky,  `node-red-node-darksky`
 
-#### Grafana
+#### Configure Grafana
 
 [http://logger.local:3000](http://logger.local:3000)
 
